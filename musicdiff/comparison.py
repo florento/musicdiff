@@ -193,13 +193,13 @@ class Comparison:
         # quadratic search for LCS of bars
         # This marks a |a_lines|*|b_lines| matrix L with quadruplets containing
         # the history that got it there along with 3 values to compute a cost: 
-        # - length of lcs so far, 
-        # - number of diff blocs found
+        # - diag: number of diagonal steps to there = length of lcs so far, 
+        # - blocs: number of diff blocs found so far
         # - flag: wheher current mark is in a bloc
         a_max = len(a_lines)
         b_max = len(b_lines)
         lcs_max = min(a_max, b_max)      
-        Content = namedtuple("Content", ["llcs", "nb", "inbloc",  "history"])
+        Content = namedtuple("Content", ["diag", "blocs", "inbloc",  "history"])
         # fill the matrix L
         L = [[None for j in range(b_max+1)] for i in range(a_max+1)]
         for a in range(a_max+1):
@@ -209,21 +209,21 @@ class Comparison:
                 elif a_lines[a-1][0] == b_lines[b-1][0]:
                     h = L[a-1][b-1].history.copy()
                     h.append((2, a_lines[a-1][1]))
-                    L[a][b] = Content(L[a-1][b-1].llcs+1, L[a-1][b-1].nb, False, h)
+                    L[a][b] = Content(L[a-1][b-1].diag+1, L[a-1][b-1].blocs, False, h)
                 # the cost is a pair made of 
                 # - the inverse of lcs so far
                 # - number of diff blocs encountered
                 # tuples are compared lexicographically by default
-                elif (lcs_max - L[a-1][b].llcs, L[a-1][b].nb) < (lcs_max - L[a][b-1].llcs, L[a][b-1].nb):
+                elif (lcs_max - L[a-1][b].diag, L[a-1][b].blocs) < (lcs_max - L[a][b-1].diag, L[a][b-1].blocs):
                     h = L[a-1][b].history.copy()
                     h.append((0, a_lines[a-1][1]))
                     n = 0 if L[a-1][b].inbloc else 1
-                    L[a][b] = Content(L[a-1][b].llcs, L[a-1][b].nb + n, True, h)
+                    L[a][b] = Content(L[a-1][b].diag, L[a-1][b].blocs + n, True, h)
                 else:                    
                     h = L[a][b-1].history.copy()
                     h.append((1, b_lines[b-1][1]))
                     n = 0 if L[a][b-1].inbloc else 1
-                    L[a][b] = Content(L[a][b-1].llcs, L[a][b-1].nb + n, True, h)
+                    L[a][b] = Content(L[a][b-1].diag, L[a][b-1].blocs + n, True, h)
         return np.array(L[a_max][b_max].history)
        
     @staticmethod
