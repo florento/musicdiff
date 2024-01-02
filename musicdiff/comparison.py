@@ -195,7 +195,6 @@ class Comparison:
         # the history that got it there along with 3 values to compute a cost: 
         # - ndiag: number of non-diagonal steps up to there
         # - blocs: number of diff blocs found so far
-        # - flag: wheher current mark is in a bloc TBR
         a_max = len(a_lines)
         b_max = len(b_lines)
         # lcs_max = min(a_max, b_max)      
@@ -204,16 +203,20 @@ class Comparison:
         L = [[None for j in range(b_max+1)] for i in range(a_max+1)]
         for a in range(a_max+1):
             for b in range(b_max+1):
+                # upper-left corner
                 if a == 0 and b == 0:
                     L[a][b] = Content(0, 0, [])
+                # vertical move: insert measure
                 elif a == 0:
                     h = L[a][b-1].history.copy()
                     h.append((1, b_lines[b-1][1]))
                     L[a][b] = Content(b, 1, h)
+                # horizontal move: delete measure
                 elif b == 0:
                     h = L[a-1][b].history.copy()
                     h.append((0, a_lines[a-1][1]))
-                    L[a][b] = Content(a, 1, h)                    
+                    L[a][b] = Content(a, 1, h)
+                # diagonal move                    
                 elif a_lines[a-1][0] == b_lines[b-1][0]:
                     h = L[a-1][b-1].history.copy()
                     h.append((2, a_lines[a-1][1]))
@@ -222,18 +225,22 @@ class Comparison:
                 # - the number of non-diagonal steps up to there
                 # - the number of diff blocs encountered
                 # tuples are compared lexicographically by default
+                #
+                # horizontal move: delete measure
                 elif (L[a-1][b].ndiag, L[a-1][b].blocs) < (L[a][b-1].ndiag, L[a][b-1].blocs):
                     h = L[a-1][b].history.copy()
                     h.append((0, a_lines[a-1][1]))
                     n = 1 if not L[a-1][b].history or L[a-1][b].history[-1][0] == 2 else 0
                     L[a][b] = Content(L[a-1][b].ndiag + 1, L[a-1][b].blocs + n, h)
+                # vertical move: insert measure
                 else:    
                     assert (L[a-1][b].ndiag, L[a-1][b].blocs) >= (L[a][b-1].ndiag, L[a][b-1].blocs), "missing case naive diff"
                     h = L[a][b-1].history.copy()
                     h.append((1, b_lines[b-1][1]))
                     n = 1 if not L[a][b-1].history or L[a][b-1].history[-1][0] == 2 else 0
                     L[a][b] = Content(L[a][b-1].ndiag + 1, L[a][b-1].blocs + n, h)
-        return np.array(L[a_max][b_max].history)
+        # lower-right corner of L contains the edit-list of LCS
+        return np.array(L[a_max][b_max].history)    
        
     @staticmethod
     def _non_common_subsequences_myers(original, compare_to):
