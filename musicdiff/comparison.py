@@ -195,10 +195,10 @@ class Comparison:
         # the history that got it there along with 3 values to compute a cost: 
         # - ndiag: number of non-diagonal steps up to there
         # - blocs: number of diff blocs found so far
-        # - flag: wheher current mark is in a bloc
+        # - flag: wheher current mark is in a bloc TBR
         a_max = len(a_lines)
         b_max = len(b_lines)
-        lcs_max = min(a_max, b_max)      
+        # lcs_max = min(a_max, b_max)      
         Content = namedtuple("Content", ["ndiag", "blocs", "inbloc",  "history"])
         # fill the matrix L
         L = [[None for j in range(b_max+1)] for i in range(a_max+1)]
@@ -211,18 +211,19 @@ class Comparison:
                     h.append((2, a_lines[a-1][1]))
                     L[a][b] = Content(L[a-1][b-1].ndiag, L[a-1][b-1].blocs, False, h)
                 # compare a cost which is a pair made of 
-                # - the inverse of lcs so far -> change to length of edit script
-                # - number of diff blocs encountered
+                # - the number of non-diagonal steps up to there
+                # - the number of diff blocs encountered
                 # tuples are compared lexicographically by default
                 elif (L[a-1][b].ndiag, L[a-1][b].blocs) < (L[a][b-1].ndiag, L[a][b-1].blocs):
                     h = L[a-1][b].history.copy()
                     h.append((0, a_lines[a-1][1]))
-                    n = 0 if L[a-1][b].inbloc else 1
+                    n = 1 if not L[a-1][b].history or L[a-1][b].history[-1][0] == 2 else 0
                     L[a][b] = Content(L[a-1][b].ndiag + 1, L[a-1][b].blocs + n, True, h)
-                else:                    
+                else:    
+                    assert (L[a-1][b].ndiag, L[a-1][b].blocs) >= (L[a][b-1].ndiag, L[a][b-1].blocs), "missing case naive diff"
                     h = L[a][b-1].history.copy()
                     h.append((1, b_lines[b-1][1]))
-                    n = 0 if L[a][b-1].inbloc else 1
+                    n = 1 if not L[a][b-1].history or L[a][b-1].history[-1][0] == 2 else 0
                     L[a][b] = Content(L[a][b-1].ndiag + 1, L[a][b-1].blocs + n, True, h)
         return np.array(L[a_max][b_max].history)
        
@@ -234,7 +235,7 @@ class Comparison:
         # at the end).
 
         # get the list of operations
-        op_list = Comparison._naive_diff(
+        op_list = Comparison._myers_diff(
             np.array(original, dtype=np.int64), np.array(compare_to, dtype=np.int64)
         )[::-1]
         # retrieve the non common subsequences
