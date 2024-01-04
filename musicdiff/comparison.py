@@ -187,7 +187,6 @@ class Comparison:
                 frontier[k] = Frontier(x, history)
         assert False, "Could not find edit script"
 
-
     @staticmethod
     def _naive_diff(a_lines, b_lines):
         # quadratic search for LCS of bars
@@ -250,7 +249,8 @@ class Comparison:
         # at the end).
 
         # get the list of operations
-        op_list = Comparison._myers_diff(
+        # TODO: _myers_diff or _naive_diff for eval
+        op_list = Comparison._naive_diff(
             np.array(original, dtype=np.int64), np.array(compare_to, dtype=np.int64)
         )[::-1]
         # retrieve the non common subsequences
