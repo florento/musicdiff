@@ -123,7 +123,12 @@ def _memoize_generic_lev_diff(func):
 
     return memoizer
 
+
 class Comparison:
+
+    # class attribute: optional computation of the diff for lyrics
+    OPT_lyrics = False
+
     @staticmethod
     def _myers_diff(a_lines, b_lines):
         # Myers algorithm for LCS of bars (instead of the recursive algorithm in section 3.2)
@@ -242,6 +247,66 @@ class Comparison:
         return np.array(L[a_max][b_max].history)    
        
     @staticmethod
+    def _naive_diff_nocopy(a_lines, b_lines):
+        # quadratic search for LCS of bars
+        # This marks a |a_lines|*|b_lines| matrix L with quadruplets containing
+        # the history that got it there along with 3 values to compute a cost: 
+        # - ndiag: number of non-diagonal steps up to there
+        # - blocs: number of diff blocs found so far
+        # - op: 0 (delete measure) or 1 (insert measure) or 2 (skip measure)
+        # - id: precomputed_repr of measure concerned by op
+        a_max = len(a_lines)
+        b_max = len(b_lines)
+        # lcs_max = min(a_max, b_max)      
+        Content = namedtuple("Content", ["ndiag", "blocs", "op", "id"])
+        # fill the matrix L
+        L = [[None for j in range(b_max+1)] for i in range(a_max+1)]
+        for a in range(a_max+1):
+            for b in range(b_max+1):
+                # upper-left corner
+                if a == 0 and b == 0:
+                    L[a][b] = None #Content(None, None, None, None)
+                # vertical move (1) from L[a][b-1] = insert measure
+                elif a == 0: # 
+                    L[a][b] = Content(b, 1, 1, b_lines[b-1][1])
+                # horizontal move (0) from L[a-1][b] = delete measure
+                elif b == 0:
+                    L[a][b] = Content(a, 1, 0, a_lines[a-1][1])
+                # diagonal move (2) from  L[a-1][b-1] = equal measures                   
+                elif a_lines[a-1][0] == b_lines[b-1][0]:
+                    L[a][b] = Content(L[a-1][b-1].ndiag, L[a-1][b-1].blocs, 2, a_lines[a-1][1])
+                # compare a cost which is a pair made of 
+                # - the number of non-diagonal steps up to there
+                # - the number of diff blocs encountered
+                # tuples are compared lexicographically by default
+                #
+                # horizontal move (0) from L[a-1][b] = delete measure
+                elif (L[a-1][b].ndiag, L[a-1][b].blocs) < (L[a][b-1].ndiag, L[a][b-1].blocs):
+                    n = 1 if L[a-1][b] is None or L[a-1][b].op == 2 else 0
+                    L[a][b] = Content(L[a-1][b].ndiag + 1, L[a-1][b].blocs + n, 0, a_lines[a-1][1])
+                # vertical move (1) from L[a][b-1] = insert measure
+                else:    
+                    assert (L[a-1][b].ndiag, L[a-1][b].blocs) >= (L[a][b-1].ndiag, L[a][b-1].blocs), "missing case naive diff"
+                    n = 1 if L[a][b-1] is None or L[a][b-1].op == 2 else 0
+                    L[a][b] = Content(L[a][b-1].ndiag + 1, L[a][b-1].blocs + n, 1, b_lines[b-1][1])
+        # recover the edit-history of LCS 
+        # along the path from lower-right corner to upper left corner of L 
+        a, b = a_max, b_max
+        history = []
+        while (a > 0 or b > 0):
+            history.insert(0, (L[a][b].op, L[a][b].id))
+            if L[a][b].op == 0:
+                a -= 1
+            elif L[a][b].op == 1:
+                b -= 1
+            elif L[a][b].op == 2:
+                a -= 1
+                b -= 1
+            else:
+                assert False, "error in history"                
+        return np.array(history)    
+
+    @staticmethod
     def _non_common_subsequences_myers(original, compare_to):
         # Both original and compare_to are list of lists, or numpy arrays with 2 columns.
         # This is necessary because bars need two representations at the same time.
@@ -249,8 +314,8 @@ class Comparison:
         # at the end).
 
         # get the list of operations
-        # TODO: _myers_diff or _naive_diff for eval
-        op_list = Comparison._naive_diff(
+        # TODO: flag to select _myers_diff or _naive_diff for eval
+        op_list = Comparison._naive_diff_nocopy(
             np.array(original, dtype=np.int64), np.array(compare_to, dtype=np.int64)
         )[::-1]
         # retrieve the non common subsequences
@@ -882,9 +947,7 @@ class Comparison:
         op_list["notesub"], cost["notesub"] = Comparison._inside_bars_diff_lin(
             original[1:], compare_to[1:]
         )
-        if (
-            original[0] == compare_to[0]
-        ):  # avoid call another function if they are equal
+        if (original[0] == compare_to[0]):  # avoid call another function if they are equal
             notesub_op, notesub_cost = [], 0
         else:
             notesub_op, notesub_cost = Comparison._annotated_note_diff(original[0], compare_to[0])
@@ -895,8 +958,8 @@ class Comparison:
         out = op_list[min_key], cost[min_key]
         return out
 
-    @staticmethod
-    def _annotated_note_diff(annNote1: AnnNote, annNote2: AnnNote):
+    @classmethod
+    def _annotated_note_diff(cls, annNote1: AnnNote, annNote2: AnnNote):
         """
         Compute the differences between two annotated notes.
         Each annotated note consist in a 5tuple (pitches, notehead, dots, beamings, tuplets)
@@ -973,7 +1036,7 @@ class Comparison:
             op_list.extend(expr_op_list)
             cost += expr_cost
         # add for the lyrics
-        if annNote1.lyrics != annNote2.lyrics:
+        if cls.OPT_lyrics and annNote1.lyrics != annNote2.lyrics:
             lyr_op_list, lyr_cost = Comparison._generic_leveinsthein_diff(
                 annNote1.lyrics,
                 annNote2.lyrics,
@@ -1217,12 +1280,17 @@ class Comparison:
         # iterate for all parts in the score
         for p_number in range(n_of_parts):
             # compute non-common-subseq
+            print(f"compute non-common-subseq part {p_number}");
             ncs = Comparison._non_common_subsequences_of_measures(
                 score1.part_list[p_number].bar_list,
                 score2.part_list[p_number].bar_list,
             )
             # compute blockdiff
+            print(f"compute blockdiff part {p_number} ({len(ncs)} ncs)");
+            i = 0;
             for subseq in ncs:
+                print(f"..compute blockdiff part {p_number} ncs {i} (subseq length {len(subseq)})");
+                i += 1
                 op_list_block, cost_block = Comparison._block_diff_lin(
                     subseq["original"], subseq["compare_to"]
                 )
@@ -1230,6 +1298,7 @@ class Comparison:
                 cost_total += cost_block
 
         # compare the staff groups
+        print("compare the staff groups");
         groups_op_list, groups_cost = Comparison._staff_groups_diff_lin(
             score1.staff_group_list, score2.staff_group_list
         )
@@ -1237,10 +1306,11 @@ class Comparison:
         cost_total += groups_cost
 
         # compare the metadata items
+        print("compare the metadata items");
         mditems_op_list, mditems_cost = Comparison._metadata_items_diff_lin(
             score1.metadata_items_list, score2.metadata_items_list
         )
         op_list_total.extend(mditems_op_list)
         cost_total += mditems_cost
-
+                
         return op_list_total, cost_total

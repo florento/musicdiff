@@ -51,7 +51,8 @@ def diff(
     out_path2: str | Path | None = None,
     force_parse: bool = True,
     visualize_diffs: bool = True,
-    detail: DetailLevel = DetailLevel.Default
+    detail: DetailLevel = DetailLevel.Default, 
+    opt_lyrics: bool = False
 ) -> int | None:
     '''
     Compare two musical scores and optionally save/display the differences as two marked-up
@@ -166,9 +167,13 @@ def diff(
 
     diff_list: list
     _cost: int
+    Comparison.OPT_lyrics = opt_lyrics # class attribute
     diff_list, _cost = Comparison.annotated_scores_diff(annotated_score1, annotated_score2)
 
     numDiffs: int = len(diff_list)
+    print(f"diff list length: {numDiffs}");
+    print(f"cost: {_cost}");
+
     if visualize_diffs and numDiffs != 0:
         # you can change these three colors as you like...
         # Visualization.INSERTED_COLOR = 'red'
