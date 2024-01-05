@@ -1289,7 +1289,9 @@ class Comparison:
             print(f"compute blockdiff part {p_number} ({len(ncs)} ncs)");
             i = 0;
             for subseq in ncs:
-                print(f"..compute blockdiff part {p_number} ncs {i} (subseq length {len(subseq)})");
+                l1 = len(subseq["original"])
+                l2 = len(subseq["compare_to"])               
+                print(f"..compute blockdiff part {p_number} ncs {i} (subseq length {l1}, {l2})");
                 i += 1
                 op_list_block, cost_block = Comparison._block_diff_lin(
                     subseq["original"], subseq["compare_to"]

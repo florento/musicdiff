@@ -119,20 +119,22 @@ class AnnNote:
 
         # lyrics
         self.lyrics: list[str] = []
-        for lyric in general_note.lyrics:
-            lyricStr: str = ""
-            if lyric.number is not None:
-                lyricStr += f"number={lyric.number}"
-            if lyric._identifier is not None:
-                lyricStr += f" identifier={lyric._identifier}"
-            if lyric.syllabic is not None:
-                lyricStr += f" syllabic={lyric.syllabic}"
-            if lyric.text is not None:
-                lyricStr += f" text={lyric.text}"
-            lyricStr += f" rawText={lyric.rawText}"
-            if M21Utils.has_style(lyric):
-                lyricStr += f" style={M21Utils.obj_to_styledict(lyric, detail)}"
-            self.lyrics.append(lyricStr)
+        # dirty: always ignore lyrices
+        # TODO: option for lyrics in DetailLevel ?
+        # for lyric in general_note.lyrics:
+        #     lyricStr: str = ""
+        #     if lyric.number is not None:
+        #         lyricStr += f"number={lyric.number}"
+        #     if lyric._identifier is not None:
+        #         lyricStr += f" identifier={lyric._identifier}"
+        #     if lyric.syllabic is not None:
+        #         lyricStr += f" syllabic={lyric.syllabic}"
+        #     if lyric.text is not None:
+        #         lyricStr += f" text={lyric.text}"
+        #     lyricStr += f" rawText={lyric.rawText}"
+        #     if M21Utils.has_style(lyric):
+        #         lyricStr += f" style={M21Utils.obj_to_styledict(lyric, detail)}"
+        #     self.lyrics.append(lyricStr)
 
         # precomputed representations for faster comparison
         self.precomputed_str: str = self.__str__()
