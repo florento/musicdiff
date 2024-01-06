@@ -14,7 +14,7 @@
 __docformat__ = "google"
 
 import copy
-from collections import namedtuple
+from collections import namedtuple, deque
 from difflib import ndiff
 
 # import typing as t
@@ -70,6 +70,17 @@ def _memoize_metadata_items_diff_lin(func):
     return memoizer
 
 def _memoize_block_diff_lin(func):
+    mem = {}
+
+    def memoizer(original, compare_to):
+        key = repr(original) + repr(compare_to)
+        if key not in mem:
+            mem[key] = func(original, compare_to)
+        return copy.deepcopy(mem[key])
+
+    return memoizer
+
+def _memoize_block_diff_memo(func):
     mem = {}
 
     def memoizer(original, compare_to):
@@ -265,7 +276,7 @@ class Comparison:
             for b in range(b_max+1):
                 # upper-left corner
                 if a == 0 and b == 0:
-                    L[a][b] = None #Content(None, None, None, None)
+                    L[a][b] = Content(0, 0, None, None)
                 # vertical move (1) from L[a][b-1] = insert measure
                 elif a == 0: # 
                     L[a][b] = Content(b, 1, 1, b_lines[b-1][1])
@@ -274,7 +285,9 @@ class Comparison:
                     L[a][b] = Content(a, 1, 0, a_lines[a-1][1])
                 # diagonal move (2) from  L[a-1][b-1] = equal measures                   
                 elif a_lines[a-1][0] == b_lines[b-1][0]:
-                    L[a][b] = Content(L[a-1][b-1].ndiag, L[a-1][b-1].blocs, 2, a_lines[a-1][1])
+                    nd = 0 if a ==1 and b == 1 else L[a-1][b-1].ndiag
+                    bl = 0 if a ==1 and b == 1 else L[a-1][b-1].blocs
+                    L[a][b] = Content(nd, bl, 2, a_lines[a-1][1])
                 # compare a cost which is a pair made of 
                 # - the number of non-diagonal steps up to there
                 # - the number of diff blocs encountered
@@ -282,12 +295,18 @@ class Comparison:
                 #
                 # horizontal move (0) from L[a-1][b] = delete measure
                 elif (L[a-1][b].ndiag, L[a-1][b].blocs) < (L[a][b-1].ndiag, L[a][b-1].blocs):
-                    n = 1 if L[a-1][b] is None or L[a-1][b].op == 2 else 0
+                    assert a>0 and b>0
+                    assert L[a-1][b] is not None
+                    assert L[a-1][b].op is not None
+                    n = 1 if L[a-1][b].op == 2 else 0
                     L[a][b] = Content(L[a-1][b].ndiag + 1, L[a-1][b].blocs + n, 0, a_lines[a-1][1])
                 # vertical move (1) from L[a][b-1] = insert measure
                 else:    
+                    assert a>0 and b>0
                     assert (L[a-1][b].ndiag, L[a-1][b].blocs) >= (L[a][b-1].ndiag, L[a][b-1].blocs), "missing case naive diff"
-                    n = 1 if L[a][b-1] is None or L[a][b-1].op == 2 else 0
+                    assert L[a][b-1] is not None
+                    assert L[a][b-1].op is not None
+                    n = 1 if L[a][b-1].op == 2 else 0
                     L[a][b] = Content(L[a][b-1].ndiag + 1, L[a][b-1].blocs + n, 1, b_lines[b-1][1])
         # recover the edit-history of LCS 
         # along the path from lower-right corner to upper left corner of L 
@@ -557,6 +576,85 @@ class Comparison:
         min_key = min(cost_dict, key=lambda k: cost_dict[k])
         out = op_list_dict[min_key], cost_dict[min_key]
         return out
+    
+    @staticmethod
+    @_memoize_block_diff_memo
+    def _block_diff_memo(original, compare_to):
+        """ 
+        compute the levenshtein distance between two sequences of measures (diff_block)
+        """
+        o_max = len(original)
+        c_max = len(compare_to)
+        Content = namedtuple("Content", ["op_list", "cost"])
+        D = [[None for j in range(c_max+1)] for i in range(o_max+1)]
+
+        # print("  block_diff: computing the matrix")
+
+        D[0][0] = Content([], 0)
+
+        for i in range(1, o_max+1):
+            s = original[i-1].notation_size()
+            D[i][0] = Content([("delbar", original[i-1], None, s)], D[i-1][0].cost + s)
+            
+        for j in range(1, c_max+1):
+            s = compare_to[j-1].notation_size()
+            D[0][j] = Content([("insbar", None, compare_to[j-1], s)], D[0][j-1].cost + s)
+            
+        for i in range(1, o_max+1):
+            for j in range(1, c_max+1):
+                op_list_dict = {}
+                cost_dict = {}
+                assert D[i-1][j] is not None
+                s = original[i-1].notation_size()
+                op_list_dict["delbar"] = [("delbar", original[i-1], None, s)]
+                cost_dict["delbar"] = D[i-1][j].cost + s
+                assert D[i][j-1] is not None
+                s = compare_to[j-1].notation_size()
+                op_list_dict["insbar"] = [("insbar", None, compare_to[j-1], s)]
+                cost_dict["insbar"] = D[i][j-1].cost + s
+                assert D[i-1][j-1] is not None
+                if (original[i-1] == compare_to[j-1]):  # to avoid performing the _voices_coupling_recursive if it's not needed
+                    inside_bar_op_list = []
+                    inside_bar_cost = 0
+                else:
+                    # diff the bar extras (like _inside_bars_diff_lin, but with lists of AnnExtras
+                    # instead of lists of AnnNotes)
+                    extras_op_list, extras_cost = Comparison._extras_diff_lin(
+                        original[i-1].extras_list, compare_to[j-1].extras_list)
+        
+                    # run the voice coupling algorithm, and add to inside_bar_op_list and inside_bar_cost
+                    inside_bar_op_list, inside_bar_cost = Comparison._voices_coupling_recursive(
+                        original[i-1].voices_list, compare_to[j-1].voices_list)
+                    inside_bar_op_list.extend(extras_op_list)
+                    inside_bar_cost += extras_cost                    
+                op_list_dict["editbar"] = inside_bar_op_list
+                cost_dict["editbar"] = D[i-1][j-1].cost + inside_bar_cost
+                # compute the minimum of the possibilities
+                min_key = min(cost_dict, key=lambda k: cost_dict[k])
+                D[i][j] = Content(op_list_dict[min_key], cost_dict[min_key])
+        
+        # recover the op list along the best path
+        # print("  block_diff: recovering the op list along the best path")
+        i, j = o_max, c_max
+        ops = deque([])
+        assert D[i][j] is not None
+        cost = D[i][j].cost
+        while (i > 0 or j > 0):
+            assert D[i][j] is not None
+            opsij = D[i][j].op_list
+            # op_list = [*oplij, *op_list]  # oplij + op_list
+            #oplij.reverse()
+            #op_list.extend(oplij)
+            ops.extendleft(reversed(opsij))             # extend in place
+            if len(opsij) == 1 and opsij[0][0] == "delbar":
+                i -= 1
+            elif len(opsij) == 1 and opsij[0][0] == "insbar":
+                j -= 1
+            else: # editbar
+                i -= 1
+                j -= 1
+                
+        return list(ops), cost
 
     @staticmethod
     @_memoize_extras_diff_lin
@@ -1293,7 +1391,7 @@ class Comparison:
                 l2 = len(subseq["compare_to"])               
                 print(f"..compute blockdiff part {p_number} ncs {i} (subseq length {l1}, {l2})");
                 i += 1
-                op_list_block, cost_block = Comparison._block_diff_lin(
+                op_list_block, cost_block = Comparison._block_diff_memo(
                     subseq["original"], subseq["compare_to"]
                 )
                 op_list_total.extend(op_list_block)
